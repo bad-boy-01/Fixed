@@ -602,22 +602,28 @@ class UnifiedPipeline:
 
         storyboard_path = os.path.join(self.pm.dirs["output"], "storyboard.json")
         
-        all_panels = []
+        all_pages = []
         if os.path.exists(storyboard_path):
             try:
                 import json
                 with open(storyboard_path, "r", encoding="utf-8") as f:
-                    all_panels = json.load(f)
-                logger.info(f"  Loaded {len(all_panels)} existing panels.")
+                    all_pages = json.load(f)
+                logger.info(f"  Loaded {len(all_pages)} existing pages.")
             except Exception as e:
                 logger.error(f"Failed to load storyboard.json: {e}")
 
         current_chapter = 1
         seq = 1
-        if all_panels:
-            max_chapter = max((p.get("chapter", 1) for p in all_panels), default=1)
+        page_num = 1
+        if all_pages:
+            max_chapter = 1
+            for pg in all_pages:
+                for p in pg.get("panels", []):
+                    if p.get("chapter", 1) > max_chapter:
+                        max_chapter = p.get("chapter", 1)
             current_chapter = max_chapter + 1
-            seq = max((p.get("sequence", 0) for p in all_panels), default=0) + 1
+            page_num = max((pg.get("page_number", 0) for pg in all_pages), default=0) + 1
+            seq = max((p.get("sequence", 0) for pg in all_pages for p in pg.get("panels", [])), default=0) + 1
 
         planner = StoryboardPlanner(self.planner_llm, config=self.config.config)
         prompter = PromptGenerator(self.memory_db, config=self.config.config, llm_adapter=self.planner_llm)
@@ -673,74 +679,35 @@ class UnifiedPipeline:
                     if getattr(self.planner_llm, "is_cloud", False):
                         time.sleep(2)
                         
-                    result = planner.plan_panels(chunk_text, current_state=planner_state, chapter=current_chapter, start_sequence=seq)
+                    result = planner.plan_pages(chunk_text, current_state=planner_state, chapter=current_chapter, start_page=page_num, start_sequence=seq)
                     planner_state = result.get("state", planner_state)
-                    panels = result.get("panels", [])
+                    pages = result.get("pages", [])
                     
-                    if not panels:
-                        logger.warning(f"  ⚠️ Block {i+1} yielded 0 panels.")
+                    if not pages:
+                        logger.warning(f"  ⚠️ Block {i+1} yielded 0 pages.")
                         continue
 
-                    # IMAGE BUDGET ENFORCEMENT
-                    words_per_image = self.config.config.get("storyboard", {}).get("words_per_image", 80)
-                    chunk_words = len(chunk_text.split())
-                    budget = max(1, round(chunk_words / words_per_image))
+                    # Generate prompts for the panels inside each page
+                    for pg in pages:
+                        for p in pg.get("panels", []):
+                            p["chapter"] = current_chapter
+                            prompt_data = prompter.generate_prompt_for_panel(p, chapter_number=current_chapter)
+                            p["prompt"] = prompt_data["prompt"]
+                            p["negative_prompt"] = prompt_data["negative_prompt"]
+                            p["reference_images"] = prompt_data["reference_images"]
+                            p["prompt_cache_key"] = prompt_data.get("cache_key", "")
+                            p["generation_params"] = prompt_data.get("generation_params", {})
+                        
+                    all_pages.extend(pages)
                     
-                    unmerged_panels = [p for p in panels if not p.get("merge_with_previous", False)]
+                    # Update sequence counters
+                    num_panels = sum(len(pg.get("panels", [])) for pg in pages)
+                    seq += num_panels
+                    page_num += len(pages)
                     
-                    if len(unmerged_panels) > budget:
-                        scored_panels = []
-                        for p in unmerged_panels:
-                            bt = p.get("beat_type", "action")
-                            imp = p.get("importance", 5)
-                            
-                            is_protected = (bt in ["reveal", "combat"]) or (imp >= 8)
-                            
-                            # Lower score = dropped/merged first
-                            score = imp
-                            if imp <= 4: score -= 20
-                            elif bt == "transition": score -= 15
-                            elif bt == "reaction": score -= 10
-                            elif bt == "emotion": score -= 8
-                            elif bt == "dialogue": score -= 5
-                            elif bt == "environment": score += 1
-                            elif bt == "action": score += 2
-                            elif bt == "object_focus": score += 2
-                            
-                            scored_panels.append({
-                                "panel": p,
-                                "score": score,
-                                "protected": is_protected
-                            })
-                            
-                        scored_panels.sort(key=lambda x: x["score"])
-                        
-                        over_budget_by = len(unmerged_panels) - budget
-                        merged_count = 0
-                        
-                        for sp in scored_panels:
-                            if merged_count >= over_budget_by:
-                                break
-                            if not sp["protected"]:
-                                sp["panel"]["merge_with_previous"] = True
-                                merged_count += 1
-                                logger.info(f"    - Over budget: Merging {sp['panel']['id']} ({sp['panel']['beat_type']}, imp {sp['panel'].get('importance', 5)}, score {sp['score']})")
-
-                    # Generate prompts for the panels
-                    for p in panels:
-                        p["chapter"] = current_chapter
-                        prompt_data = prompter.generate_prompt_for_panel(p, chapter_number=current_chapter)
-                        p["prompt"] = prompt_data["prompt"]
-                        p["negative_prompt"] = prompt_data["negative_prompt"]
-                        p["reference_images"] = prompt_data["reference_images"]
-                        p["prompt_cache_key"] = prompt_data.get("cache_key", "")
-                        p["generation_params"] = prompt_data.get("generation_params", {})
-                        
-                    all_panels.extend(panels)
-                    seq += len(panels)
                     new_panels_added = True
                     self.pm.save_checkpoint("visual_planning_chunk", "done", sub_key=chunk_key)
-                    logger.info(f"    + {len(panels)} panels (total: {len(all_panels)})")
+                    logger.info(f"    + {len(pages)} pages (total: {len(all_pages)})")
                 except Exception as e:
                     logger.error(f"  ⚠️  Block {i+1} failed: {e}")
                     continue
@@ -749,9 +716,9 @@ class UnifiedPipeline:
 
         if new_panels_added:
             import json
-            self.pm.save_output("storyboard.json", json.dumps(all_panels, indent=2))
+            self.pm.save_output("storyboard.json", json.dumps(all_pages, indent=2))
             self.pm.save_checkpoint("visual_planning", "done")
-            logger.info(f"✅ Visual planning complete: {len(all_panels)} panels")
+            logger.info(f"✅ Visual planning complete: {len(all_pages)} pages")
         else:
             logger.info("  No new panels planned.")
 
@@ -770,71 +737,114 @@ class UnifiedPipeline:
 
         import json
         with open(storyboard_path, "r", encoding="utf-8") as f:
-            all_panels = json.load(f)
+            all_pages = json.load(f)
 
         debug_dir = os.path.join(self.pm.dirs["output"], "debug")
         os.makedirs(debug_dir, exist_ok=True)
         
-        for panel in all_panels:
-            pid = panel["id"]
+        pages_dir = os.path.join(self.pm.dirs["output"], "pages")
+        os.makedirs(pages_dir, exist_ok=True)
+        
+        for pg in all_pages:
+            pg_id = pg.get("id", f"page_{pg.get('page_number', 0)}")
             debug_info = {
-                "id": pid,
-                "description": panel.get("description", ""),
-                "visual_tags": panel.get("visual_tags", []),
-                "merge_with_previous": panel.get("merge_with_previous", False),
-                "prompt": panel.get("prompt", ""),
-                "image_path": os.path.join(images_dir, f"{pid}.png")
+                "page_id": pg_id,
+                "layout_id": pg.get("layout_id", ""),
+                "panels": []
             }
-            with open(os.path.join(debug_dir, f"{pid}.json"), "w", encoding="utf-8") as f:
+            for panel in pg.get("panels", []):
+                pid = panel["id"]
+                debug_info["panels"].append({
+                    "id": pid,
+                    "description": panel.get("description", ""),
+                    "visual_tags": panel.get("visual_tags", []),
+                    "prompt": panel.get("prompt", ""),
+                    "seed": panel.get("seed", 0),
+                    "image_path": os.path.join(images_dir, f"{pid}.png")
+                })
+            with open(os.path.join(debug_dir, f"{pg_id}.json"), "w", encoding="utf-8") as f:
                 json.dump(debug_info, f, indent=2)
 
-        merged_count = sum(1 for p in all_panels if p.get("merge_with_previous", False))
-        logger.info(f"  Storyboard panels: {len(all_panels)}")
-        logger.info(f"  Panels marked merge_with_previous: {merged_count}")
+        total_panels = sum(len(pg.get("panels", [])) for pg in all_pages)
+        logger.info(f"  Storyboard pages: {len(all_pages)} ({total_panels} panels)")
 
         panels_to_process = []
         generated_count = 0
 
-        for panel in all_panels:
-            pid = panel["id"]
-            # Skip if merged with previous
-            if panel.get("merge_with_previous", False):
-                continue
+        from config.templates import LAYOUTS as LAYOUT_TEMPLATES
+
+        for pg in all_pages:
+            layout_id = pg.get("layout_template", "4_panel_grid")
+            if layout_id not in LAYOUT_TEMPLATES:
+                layout_id = "4_panel_grid"
+            template = LAYOUT_TEMPLATES[layout_id]
+            
+            for idx, panel in enumerate(pg.get("panels", [])):
+                if idx < len(template["panels"]):
+                    panel["native_width"] = template["panels"][idx]["res"]["width"]
+                    panel["native_height"] = template["panels"][idx]["res"]["height"]
+                else:
+                    panel["native_width"] = 832
+                    panel["native_height"] = 480
+
+                pid = panel["id"]
+                output_path = os.path.join(images_dir, f"{pid}.png")
+                p_hash = panel.get("prompt_cache_key", "")
+
+                if os.path.exists(output_path) and self.pm.get_checkpoint_value("img_cache", pid) == p_hash:
+                    generated_count += 1
+                else:
+                    panels_to_process.append(panel)
+
+        if panels_to_process:
+            logger.info(f"  Generating {len(panels_to_process)} new panel images…")
+            for panel in panels_to_process:
+                pid = panel["id"]
+                output_path = os.path.join(images_dir, f"{pid}.png")
+                p_hash = panel.get("prompt_cache_key", "")
                 
-            output_path = os.path.join(images_dir, f"{pid}.png")
-            p_hash = panel.get("prompt_cache_key", "")
+                # Apply deterministic seed for reproducibility
+                gen_params = panel.get("generation_params", {})
+                gen_params["seed"] = panel.get("seed")
+                
+                if "native_width" in panel:
+                    gen_params["width"] = panel["native_width"]
+                    gen_params["height"] = panel["native_height"]
 
-            if os.path.exists(output_path) and self.pm.get_checkpoint_value("img_cache", pid) == p_hash:
+                self.image_gen.generate_image(
+                    prompt=panel.get("prompt", "scene"),
+                    output_path=output_path,
+                    negative_prompt=panel.get("negative_prompt", ""),
+                    reference_image_paths=panel.get("reference_images", []),
+                    generation_params=gen_params
+                )
+
+                self.pm.save_checkpoint("img_cache", p_hash, sub_key=pid)
                 generated_count += 1
-            else:
-                panels_to_process.append(panel)
+                if generated_count % 10 == 0:
+                    logger.info(f"  Progress: {generated_count} images")
 
-        if not panels_to_process:
-            logger.info("  No new images to generate. Image generation already complete.")
-            return
-
-        logger.info(f"  Panels queued for generation: {len(panels_to_process)}")
-        logger.info(f"  Generating {len(panels_to_process)} new images…")
-
-        for panel in panels_to_process:
-            pid = panel["id"]
-            output_path = os.path.join(images_dir, f"{pid}.png")
-            p_hash = panel.get("prompt_cache_key", "")
-
-            self.image_gen.generate_image(
-                prompt=panel["prompt"],
-                output_path=output_path,
-                negative_prompt=panel.get("negative_prompt", ""),
-                reference_image_paths=panel.get("reference_images", []),
-                generation_params=panel.get("generation_params", {})
-            )
-
-            self.pm.save_checkpoint("img_cache", p_hash, sub_key=pid)
-            generated_count += 1
-            if generated_count % 10 == 0:
-                logger.info(f"  Progress: {generated_count} images")
-
-        logger.info(f"✅ Image generation complete: {generated_count} total generated")
+        logger.info(f"✅ Image generation complete. Now compositing pages...")
+        
+        from core.visual.compositor import compose_page
+        from PIL import Image
+        
+        for pg in all_pages:
+            pg_id = pg.get("id", f"page_{pg.get('page_number', 0)}")
+            comp_path = os.path.join(pages_dir, f"{pg_id}.png")
+            
+            # We composite even if already existing, because it's fast and 
+            # guarantees it matches current metadata layout version
+            panel_images = []
+            for panel in pg.get("panels", []):
+                img_path = os.path.join(images_dir, f"{panel['id']}.png")
+                try:
+                    panel_images.append(Image.open(img_path).convert("RGB"))
+                except Exception as e:
+                    logger.error(f"Failed to load panel image {img_path}: {e}")
+            
+            if len(panel_images) > 0:
+                compose_page(pg, panel_images, comp_path)
 
     # ── Stage 6: Audio Generation ─────────────────────────────────────────────
     def stage_audio(self):
