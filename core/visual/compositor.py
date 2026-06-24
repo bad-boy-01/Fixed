@@ -38,22 +38,8 @@ def compose_page(page_metadata: dict, panel_images: list, output_path: str) -> d
         # CRITICAL: Structural paste completely bypasses resizing or cropping
         canvas.paste(panel_img, (x, y))
         
-        # Render manga-style panel sequence tracker
-        box_size = 40
-        padding = 10
-        box_coords = [x + padding, y + padding, x + padding + box_size, y + padding + box_size]
-        
-        # Draw overlay indicator bounding container
-        draw.rectangle(box_coords, fill="white", outline="black", width=3)
-        
-        # Draw numbering context
-        text = str(idx + 1)
-        # We try to use a default font or default PIL text rendering
-        # Just simple text drawing for Kaggle compatibility
-        draw.text((box_coords[0] + 12, box_coords[1] + 8), text, fill="black", stroke_width=1)
-        
-        panel_id = page_metadata["panels"][idx]["id"]
         # Save bbox for legacy compatibility if needed
+        panel_id = page_metadata["panels"][idx]["id"]
         bboxes[panel_id] = [x, y, x + panel_config["res"]["width"], y + panel_config["res"]["height"]]
         
     canvas.save(output_path, "PNG")
