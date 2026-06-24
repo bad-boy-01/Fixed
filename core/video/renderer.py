@@ -178,33 +178,31 @@ class VideoRenderer:
             with open(srt_path, "w", encoding="utf-8") as f:
                 for pg in all_pages:
                     panels = pg.get("panels", [])
-                    page_duration = 0.0
-                    page_id = pg.get("id", f"page_{pg.get('page_number', 0):03d}")
-                    page_audio_path = os.path.join(self.temp_dir, f"{page_id}_audio.wav")
                     
-                    if os.path.exists(page_audio_path):
-                        # fast duration check
-                        cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", page_audio_path]
-                        res = subprocess.run(cmd, capture_output=True, text=True)
-                        try:
-                            page_duration = float(res.stdout.strip())
-                        except ValueError:
-                            page_duration = 3.0
-                    else:
-                        page_duration = 3.0
-
-                    # Just use the full page text as one subtitle block for simplicity,
-                    # or split per panel if preferred. Here we combine.
-                    text = " ".join(p.get("description", "").strip() for p in panels)
-                    
-                    if text:
-                        start_str = format_time(current_time)
-                        end_str = format_time(current_time + page_duration)
-                        f.write(f"{srt_index}\n{start_str} --> {end_str}\n{text}\n\n")
-                        srt_index += 1
+                    for p in panels:
+                        panel_id = p.get("id", "")
+                        panel_audio_path = os.path.join(self.audio_dir, f"{panel_id}.wav")
+                        panel_duration = 3.0
                         
-                    current_time += page_duration
-                    
+                        if os.path.exists(panel_audio_path):
+                            # fast duration check
+                            cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", panel_audio_path]
+                            res = subprocess.run(cmd, capture_output=True, text=True)
+                            try:
+                                panel_duration = float(res.stdout.strip())
+                            except ValueError:
+                                pass
+                                
+                        text = p.get("description", "").strip()
+                        
+                        if text:
+                            start_str = format_time(current_time)
+                            end_str = format_time(current_time + panel_duration)
+                            f.write(f"{srt_index}\n{start_str} --> {end_str}\n{text}\n\n")
+                            srt_index += 1
+                            
+                        current_time += panel_duration
+                        
             logger.info("✓ SRT generated")
         except Exception as e:
             logger.error(f"Failed to generate SRT: {e}")
