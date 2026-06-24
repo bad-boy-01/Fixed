@@ -143,10 +143,12 @@ class LocalImageAdapter:
             pulid_path = os.path.join(weights_dir, "ip-adapter_sdxl_pulid.bin")
             if not os.path.exists(pulid_path):
                 logger.info("Downloading PuLID weights…")
+                hf_token = os.environ.get("HF_TOKEN")
                 hf_hub_download(
                     repo_id="yanze/PuLID",
                     filename="ip-adapter_sdxl_pulid.bin",
-                    local_dir=weights_dir
+                    local_dir=weights_dir,
+                    token=hf_token
                 )
             
             # 2. Load EVA-CLIP (Identity Encoder)
@@ -374,12 +376,14 @@ class LocalImageAdapter:
 
     def _run_generation(self, prompt, output_path, negative_prompt,
                         ref_paths, seed, steps, cfg, w, h):
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
         if self.pipeline is None:
             logger.info(f"[MOCK] {prompt[:60]}…")
             self._save_placeholder(output_path, w, h)
             return
-
-        import torch
         
         # Check token length
         input_ids = self.pipeline.tokenizer(prompt).input_ids
@@ -425,6 +429,13 @@ class LocalImageAdapter:
                     "num_inference_steps": steps,
                     "guidance_scale": cfg,
                 }
+                
+                # Free VRAM immediately after Compel text encoding before UNet boots up
+                if torch.cuda.is_available():
+                    import gc
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    
             except Exception as e:
                 logger.exception(f"  Compel encoding failed ({e}) — using plain prompt")
                 logger.error(f"  Debug Info - Prompt Length: {prompt_token_length}, Expected Device: {'cuda' if torch.cuda.is_available() else 'cpu'}")
