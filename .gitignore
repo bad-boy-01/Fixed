@@ -1,15 +1,25 @@
-# Generated files
+# Ignore all pipeline output directories
 projects/*/output/
+projects/*/artifacts/
 projects/*/memory/
 projects/*/cache/
 projects/*/storyboard/
-projects/*/checkpoints.json
 projects/*/export/
+
+# Ignore memory databases and checkpoint data
+*.db
+*.sqlite
+projects/*/checkpoints.json
+
+# Ignore local scripts (except placeholders/readmes if necessary)
+projects/*/input/*.txt
+
+# Python & Environment
 __pycache__/
 *.pyc
-*.db
 *.log
 .env
 
+# Ignore markdown but preserve README
 *.md
 !README.md
