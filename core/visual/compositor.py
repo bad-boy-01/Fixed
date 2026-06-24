@@ -56,6 +56,55 @@ def compose_page(page_metadata: dict, panel_images: list, output_path: str) -> d
         # Save bbox for legacy compatibility if needed
         bboxes[panel_id] = [x, y, x + panel_config["res"]["width"], y + panel_config["res"]["height"]]
         
+        # --- Add Narration Text Box ---
+        narration = page_metadata["panels"][idx].get("description", "").strip()
+        if narration:
+            try:
+                import textwrap
+                # Calculate box dimensions
+                panel_w = panel_config["res"]["width"]
+                panel_h = panel_config["res"]["height"]
+                margin = 20
+                
+                # Try to use a better font, fallback to default
+                try:
+                    font = ImageFont.truetype("arial.ttf", 24)
+                except IOError:
+                    font = ImageFont.load_default()
+                
+                # Wrap text to fit panel width
+                avg_char_width = 12
+                chars_per_line = max(10, (panel_w - (margin * 4)) // avg_char_width)
+                lines = textwrap.wrap(narration, width=chars_per_line)
+                
+                line_height = 28
+                text_block_height = len(lines) * line_height
+                box_height = text_block_height + (margin * 2)
+                
+                # Position box at the bottom of the panel
+                box_x1 = x + margin
+                box_y1 = y + panel_h - box_height - margin
+                box_x2 = x + panel_w - margin
+                box_y2 = y + panel_h - margin
+                
+                # Draw semi-transparent black background for readability
+                overlay = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
+                overlay_draw = ImageDraw.Draw(overlay)
+                overlay_draw.rectangle([box_x1, box_y1, box_x2, box_y2], fill=(0, 0, 0, 180), outline="white", width=2)
+                canvas = Image.alpha_composite(canvas.convert('RGBA'), overlay).convert('RGB')
+                
+                # We need a new draw object since we created a new canvas image
+                draw = ImageDraw.Draw(canvas)
+                
+                # Draw text lines
+                text_y = box_y1 + margin
+                for line in lines:
+                    draw.text((box_x1 + margin, text_y), line, font=font, fill="white")
+                    text_y += line_height
+                    
+            except Exception as e:
+                logger.error(f"Failed to draw narration for panel {idx}: {e}")
+
     canvas.save(output_path, "PNG")
     logger.info(f"  Saved composite page: {output_path}")
     return bboxes
