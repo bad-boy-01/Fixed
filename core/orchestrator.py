@@ -860,18 +860,19 @@ class UnifiedPipeline:
 
         import json
         with open(storyboard_path, "r", encoding="utf-8") as f:
-            panels = json.load(f)
+            all_pages = json.load(f)
 
         audio_generated_count = 0
         panels_to_process = []
 
-        for panel in panels:
-            pid = panel["id"]
-            out_path = os.path.join(audio_dir, f"{pid}.wav")
-            if not os.path.exists(out_path) or os.path.getsize(out_path) < 100:
-                panels_to_process.append(panel)
-            else:
-                audio_generated_count += 1
+        for pg in all_pages:
+            for panel in pg.get("panels", []):
+                pid = panel["id"]
+                out_path = os.path.join(audio_dir, f"{pid}.wav")
+                if not os.path.exists(out_path) or os.path.getsize(out_path) < 100:
+                    panels_to_process.append(panel)
+                else:
+                    audio_generated_count += 1
 
         if not panels_to_process:
             logger.info("  No new audio to generate. Audio generation already complete.")

@@ -10,7 +10,11 @@ def main():
         print("❌ Error: Could not import LAYOUTS from config.templates.")
         sys.exit(1)
 
-    storyboard_path = os.path.join("output", "storyboard.json")
+    if len(sys.argv) > 1:
+        storyboard_path = sys.argv[1]
+    else:
+        storyboard_path = os.path.join("output", "storyboard.json")
+
     if not os.path.exists(storyboard_path):
         print(f"⚠️  No storyboard found at {storyboard_path}. Nothing to validate.")
         return
