@@ -525,12 +525,20 @@ class UnifiedPipeline:
         # guaranteed AttributeError on every run that reached this line,
         # i.e. every run with any character in memory.
         gen_all = self.config.get("project.generate_all_character_sheets", False)
-        min_importance = self.config.get("project.min_character_importance", 7)
+        min_importance = self.config.get("project.min_character_importance", 4)
+        max_sheets = self.config.get("character_sheet.max_character_sheets", 8)
+
+        characters = sorted(characters, key=lambda c: c.get("current_state", {}).get("importance", 5), reverse=True)
+        sheets_generated = 0
 
         for char in characters:
             importance = char.get("current_state", {}).get("importance", 5)
             if not gen_all and importance < min_importance:
                 logger.info(f"  Skipping {char.get('canonical_name')}: importance {importance} < {min_importance}")
+                continue
+
+            if not gen_all and sheets_generated >= max_sheets:
+                logger.info(f"  Skipping {char.get('canonical_name')}: reached max_character_sheets ({max_sheets})")
                 continue
 
             char_id = char["id"]
@@ -570,6 +578,7 @@ class UnifiedPipeline:
                 output_dir=chars_dir,
                 world_style=world_style,
             )
+            sheets_generated += 1
 
         logger.info("✅ Character sheets complete")
 
@@ -673,9 +682,9 @@ class UnifiedPipeline:
                         continue
 
                     # IMAGE BUDGET ENFORCEMENT
-                    target_images = self.config.config.get("storyboard", {}).get("target_images_per_1000_words", 6)
+                    words_per_image = self.config.config.get("storyboard", {}).get("words_per_image", 80)
                     chunk_words = len(chunk_text.split())
-                    budget = max(1, round((chunk_words / 1000) * target_images))
+                    budget = max(1, round(chunk_words / words_per_image))
                     
                     unmerged_panels = [p for p in panels if not p.get("merge_with_previous", False)]
                     
@@ -763,6 +772,26 @@ class UnifiedPipeline:
         with open(storyboard_path, "r", encoding="utf-8") as f:
             all_panels = json.load(f)
 
+        debug_dir = os.path.join(self.pm.dirs["output"], "debug")
+        os.makedirs(debug_dir, exist_ok=True)
+        
+        for panel in all_panels:
+            pid = panel["id"]
+            debug_info = {
+                "id": pid,
+                "description": panel.get("description", ""),
+                "visual_tags": panel.get("visual_tags", []),
+                "merge_with_previous": panel.get("merge_with_previous", False),
+                "prompt": panel.get("prompt", ""),
+                "image_path": os.path.join(images_dir, f"{pid}.png")
+            }
+            with open(os.path.join(debug_dir, f"{pid}.json"), "w", encoding="utf-8") as f:
+                json.dump(debug_info, f, indent=2)
+
+        merged_count = sum(1 for p in all_panels if p.get("merge_with_previous", False))
+        logger.info(f"  Storyboard panels: {len(all_panels)}")
+        logger.info(f"  Panels marked merge_with_previous: {merged_count}")
+
         panels_to_process = []
         generated_count = 0
 
@@ -784,6 +813,7 @@ class UnifiedPipeline:
             logger.info("  No new images to generate. Image generation already complete.")
             return
 
+        logger.info(f"  Panels queued for generation: {len(panels_to_process)}")
         logger.info(f"  Generating {len(panels_to_process)} new images…")
 
         for panel in panels_to_process:

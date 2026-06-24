@@ -51,6 +51,8 @@ class PromptGenerator:
         focus_char = panel.get("focus_character", None)
         characters = panel.get("characters", [])
         description = panel.get("description", "")
+        emotion = panel.get("emotion", "")
+        visual_tags = panel.get("visual_tags", [])
         
         # 1. Shot framing
         shot_tag = _SHOT_TAGS.get(shot_type.lower(), "medium shot")
@@ -127,11 +129,14 @@ class PromptGenerator:
             parts.append(loc_tag)
         if char_tags:
             parts.extend(char_tags)
-        # Description last — it contains raw prose which SDXL handles
-        # worse than structured tags, so it adds value at any token count
-        # but isn't worth crowding out style/character tokens for.
-        if description:
-            parts.append(description)
+        
+        if emotion:
+            parts.append(f"({emotion} expression:1.2)")
+            
+        if isinstance(visual_tags, list) and visual_tags:
+            parts.extend([str(t).strip() for t in visual_tags if t])
+        elif isinstance(visual_tags, str) and visual_tags.strip():
+            parts.append(visual_tags.strip())
         
         prompt = ", ".join(p.strip() for p in parts if p and p.strip())
         

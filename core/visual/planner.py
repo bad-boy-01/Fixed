@@ -34,63 +34,21 @@ class StoryboardPlanner:
         """
         system = (
             "STORYBOARDPLANNER MASTER DIRECTIVE\n\n"
-            "You are a professional storyboard director responsible for converting prose into a sequence of images.\n"
-            "Your goal is NOT to extract story beats.\n"
-            "Your goal is to determine when the audience actually needs NEW VISUAL INFORMATION.\n\n"
-            "CORE PRINCIPLE\n"
-            "A new panel should only exist when the image on screen must visibly change.\n"
-            "If the audience can understand the next event while still looking at the previous image, do not create a new image.\n"
-            "Instead:\n"
-            "* reuse the previous image\n"
-            "* set merge_with_previous = true\n"
-            "* allow narration, subtitles, camera motion, zooms, pans, and timing to carry the information\n\n"
-            "VISUAL CHANGE TEST\n"
-            "Before creating a panel ask:\n"
-            "\"Would a human manga artist draw a completely new panel here?\"\n"
-            "If NO: merge_with_previous = true\n"
-            "If YES: create a new panel\n\n"
-            "A NEW PANEL IS JUSTIFIED ONLY IF ONE OR MORE OF THESE CHANGE\n"
-            "1. Location (e.g. room -> street, village -> forest)\n"
-            "2. Character Arrangement (enter, leave, significant position change)\n"
-            "3. Major Physical Action (attack, chase, fall, escape, transformation, combat)\n"
-            "4. Important Visual Reveal (monster appears, hidden object discovered, secret identity revealed)\n"
-            "5. Significant Environmental Change (day becomes night, weather changes, fire starts)\n"
-            "6. Required Camera Reframing (establishing shot, close-up needed for important visual information)\n\n"
-            "DO NOT CREATE NEW IMAGES FOR\n"
-            "* thinking, remembering, realizing, understanding, internal monologue, narration, backstory explanation\n"
-            "* emotional reflection, brief dialogue, minor reactions, looking around\n"
-            "* walking without meaningful visual change, repeated views of the same scene\n\n"
-            "FLASHBACK RULE\n"
-            "Short memories never generate images. Memories are represented through facial expressions, narration, subtitles, camera movement. Only generate flashback images if it occupies a substantial portion of the chapter and contains unique visual events.\n\n"
-            "EMOTION RULE\n"
-            "Minor emotions never generate images (curiosity, concern, confusion, thinking, nostalgia, slight happiness). These must reuse existing images. Only create dedicated emotion panels for terror, rage, grief, despair, madness, overwhelming shock.\n\n"
-            "REVEAL RULE\n"
-            "A reveal must be visually observable. Valid: monster appears, hidden treasure found. Invalid: realizing something, learning information, discovering a fact mentally.\n\n"
-            "OBJECT FOCUS RULE\n"
-            "Object focus is reserved for important inanimate objects (sword, treasure, letter). Not valid: people, monsters, animals, facial expressions.\n\n"
-            "VISUAL STATE UNIQUENESS RULE\n"
-            "If two panels can be illustrated using the exact same image asset, they MUST collapse into a single panel. (e.g. 'Family surrounds bed' happens once. All subsequent dialogue/reactions reuse it).\n\n"
-            "DUPLICATE ENVIRONMENT RULE\n"
-            "Environment panels are only allowed when entering a new location, major environmental transformation, or major camera re-establishment. Environment may NOT be used for family reactions, dialogue, narration, reflection, memory recall, or exposition. Environment normally ONCE per location.\n\n"
-            "MEMORY RULE\n"
-            "A character remembering something does not create visual information. Never generate: 'Character remembers...', 'Character realizes...', 'Character recalls...', 'Character understands...'. These are narration events. They should be merged into the currently visible image.\n\n"
-            "VISUAL DESCRIPTION RULE\n"
-            "Descriptions must contain only things a camera can see.\n"
-            "Forbidden: memories, realizations, understanding, internal thoughts, exposition.\n"
-            "Allowed: faces, expressions, movement, posture, objects, environment, visible actions.\n\n"
-            "IMAGE ECONOMY RULE\n"
-            "One image should represent as much narrative as possible. (e.g. Character wakes up + family gathered + confusion = ONE image).\n\n"
-            "FINAL QUESTION\n"
-            "Before outputting any panel ask: \"If I remove this image entirely and keep the previous image on screen, can the audience still understand the story?\"\n"
-            "If YES: merge_with_previous = true. If NO: create a new panel.\n\n"
-            "STATE OVERRIDE: If the text introduces a completely new scene and characters, OVERRIDE the Provided State entirely. Do NOT carry over old locations or characters if they are not in the current text.\n"
-            "LOCATION RULE: Every panel MUST contain the fully resolved location name. Do NOT output 'same as previous'.\n"
-            "FOCUS CHARACTER RULE: focus_character must contain either null or a single character name. Never a comma-separated list.\n"
-            "BEAT TYPES MUST BE USED CORRECTLY: environment, reveal, action, reaction, emotion, dialogue, transition, object_focus. Environment normally ONCE per location.\n"
-            "IMPORTANCE SCALE (1-10):\n"
-            "10=Life-changing, 9=Major reveal/combat, 8=Major action, 7=Important story progression, 6=Meaningful action, 5=Useful context, 4=Minor action, 3=Minor reaction, 2=Internal thought, 1=Tiny detail.\n"
-            "Do NOT determine visual importance from beat_type. Determine visual importance from whether the audience receives new visual information.\n"
-            "A realization is not visual. A visible transformation is visual. A dialogue line is not visual. A king publicly announcing war is visual.\n\n"
+            "You are a professional Korean Manhwa webtoon artist.\n"
+            "Your goal is to convert prose into a highly dense, dynamic sequence of panels.\n\n"
+            "CORE PRINCIPLE:\n"
+            "Create a NEW panel whenever:\n"
+            "- dialogue speaker changes\n"
+            "- significant action occurs\n"
+            "- emotion changes\n"
+            "- location changes\n"
+            "- camera angle changes\n"
+            "A fast-paced TikTok/YouTube manhwa video requires an image change every 3-5 seconds.\n"
+            "DO NOT set merge_with_previous to true unless absolutely nothing has changed.\n\n"
+            "VISUAL TAGS RULE:\n"
+            "Extract visual details of the character, action, emotion, background, and environment.\n"
+            "Keep the actual prose or dialogue snippet in 'description'.\n"
+            "Put all visual elements in the 'visual_tags' list.\n\n"
             "NO MARKDOWN: Output ONLY valid JSON.\n\n"
             "JSON SCHEMA:\n"
             "{\n"
@@ -102,13 +60,15 @@ class StoryboardPlanner:
             "  },\n"
             '  "panels": [\n'
             "    {\n"
-            '      "beat_type": "environment",\n'
-            '      "shot_type": "wide_shot",\n'
+            '      "beat_type": "dialogue",\n'
+            '      "shot_type": "close_up",\n'
             '      "importance": 8,\n'
             '      "location": "Riverbank",\n'
             '      "focus_character": "Arthur",\n'
             '      "characters": ["Arthur"],\n'
-            '      "description": "Arthur sits beside the winding river under the glowing sunset."\n'
+            '      "emotion": "angry",\n'
+            '      "visual_tags": ["young man", "glaring angrily", "gritting teeth", "riverbank", "sunset"],\n'
+            '      "description": "Arthur glares angrily as he speaks."\n'
             "    }\n"
             "  ]\n"
             "}"
@@ -199,6 +159,8 @@ class StoryboardPlanner:
                     "location": raw_loc,
                     "focus_character": fc,
                     "characters": p.get("characters", []),
+                    "emotion": str(p.get("emotion", "")).strip(),
+                    "visual_tags": p.get("visual_tags", []),
                     "description": desc,
                     "chapter": chapter
                 }

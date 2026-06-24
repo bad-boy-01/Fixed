@@ -8,7 +8,7 @@ project:
     source: "auto"     # "auto" = detect language, or set "Korean" / "Chinese" / "English"
     target: "English"
   generate_all_character_sheets: false
-  min_character_importance: 7
+  min_character_importance: 4
 
 # ─── Models ──────────────────────────────────────────────────
 models:
@@ -34,7 +34,10 @@ models:
 
   # ── Image Generation ──────────────────────────────────────
   image:
-    # Animagine-XL 3.1: FREE on HuggingFace, best manhwa/webtoon model
+    # Model Options:
+    # cagliostrolab/animagine-xl-3.1 (Default)
+    # Linaqruf/noobai-xl-naivae (Stronger Manhwa output)
+    # cgkio/illustrious-xl-v1.0
     provider: "sdxl"
     model: "cagliostrolab/animagine-xl-3.1"
     # Portrait, close to 3:4, and a real SDXL bucket resolution (not just
@@ -109,9 +112,7 @@ video:
 # Target: 10-minute clips → combine into 2-hour video
 storyboard:
   scenes_per_clip: 67
-  target_images_per_1000_words: 7
-  min_images_per_1000_words: 5
-  max_images_per_1000_words: 9
+  words_per_image: 80
 
 # ─── Quality Filter ──────────────────────────────────────────
 quality_filter:
@@ -126,6 +127,7 @@ quality_filter:
 # ─── Character Sheets ────────────────────────────────────────
 character_sheet:
   enabled: true
+  max_character_sheets: 8
   poses:
     - "front"
     # Additional poses (smile, angry, crying, fight, sit) can be enabled
