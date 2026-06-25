@@ -124,13 +124,46 @@ class VideoRenderer:
             subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, check=True)
 
     def render_page_segment(self, page_image_path: str, page_audio_path: str, temp_output_path: str):
-        """Renders a low-overhead static layout presentation mapped to audio length."""
+        """Renders a layout presentation mapped to audio length with a dynamic Ken Burns zoompan."""
+        
+        # 1. Parse audio duration
+        duration = 3.0
+        if os.path.exists(page_audio_path):
+            cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", page_audio_path]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            try:
+                duration = float(res.stdout.strip())
+            except ValueError:
+                pass
+                
+        # 2. Get image dimensions to maintain aspect ratio
+        w, h = 832, 480
+        try:
+            from PIL import Image
+            with Image.open(page_image_path) as img:
+                w, h = img.size
+        except Exception as e:
+            logger.warning(f"Could not read image dimensions: {e}")
+
+        # Ensure dimensions are divisible by 2 for libx264
+        if w % 2 != 0: w -= 1
+        if h % 2 != 0: h -= 1
+
+        # 3. Construct Zoompan filter
+        fps = 25
+        # Pad frames slightly to ensure video doesn't end before audio does (shortest will handle clipping)
+        frames = int(duration * fps) + (fps * 2) 
+
+        filter_complex = f"[0:v]zoompan=z='min(zoom+0.0005,1.05)':d={frames}:s={w}x{h}:fps={fps}[v]"
+
         cmd = [
             "ffmpeg", "-y",
-            "-loop", "1", "-i", page_image_path,
+            "-i", page_image_path,
             "-i", page_audio_path,
+            "-filter_complex", filter_complex,
+            "-map", "[v]",
+            "-map", "1:a",
             "-c:v", "libx264",
-            "-tune", "stillimage",
             "-c:a", "aac",
             "-pix_fmt", "yuv420p",
             "-shortest",

@@ -502,27 +502,34 @@ class LocalImageAdapter:
                             from PIL import Image
                             import numpy as np
                             imgs = [Image.open(p).convert("RGB") for p in valid_refs]
-                            if len(imgs) > 1:
-                                # Average multiple reference images
-                                avg = np.mean(
-                                    [np.array(img.resize((224, 224))) for img in imgs], axis=0
-                                ).astype("uint8")
-                                ref_img = Image.fromarray(avg)
-                            else:
-                                ref_img = imgs[0]
                             
-                            # FIX: previously used kwargs["added_cond_kwargs"] = {"image_embeds": ref_img}
-                            # which is (a) the wrong parameter name for the diffusers SDXL pipeline,
-                            # and (b) passes a raw PIL Image where the pipeline expects pre-encoded
-                            # embedding tensors. Both mistakes combined meant the pipeline threw an
-                            # exception on EVERY scene with a reference image, which was then caught
-                            # by the except below and silently saved a red "IMAGE GENERATION FAILED"
-                            # placeholder instead of a real image.
-                            # The correct parameter is ip_adapter_image — diffusers handles the
-                            # encoding internally when ip_adapter_image is a PIL Image.
-                            kwargs["ip_adapter_image"] = ref_img
+                            # Cap references to 3 to prevent canvas slices from becoming too narrow
+                            if len(imgs) > 3:
+                                logger.warning(f"  Capping references from {len(imgs)} to 3 for IP-Adapter masking.")
+                                imgs = imgs[:3]
+                                
+                            if len(imgs) > 1:
+                                # Create vertical split regional masks to prevent Concept Bleed
+                                from PIL import ImageDraw
+                                masks = []
+                                section_width = w // len(imgs)
+                                for i in range(len(imgs)):
+                                    mask = Image.new("L", (w, h), 0)  # Black background
+                                    draw = ImageDraw.Draw(mask)
+                                    x0 = i * section_width
+                                    x1 = w if i == len(imgs) - 1 else (i + 1) * section_width
+                                    draw.rectangle([x0, 0, x1, h], fill=255)  # White region
+                                    masks.append(mask)
+                                
+                                kwargs["ip_adapter_image"] = imgs
+                                kwargs["cross_attention_kwargs"] = {"ip_adapter_masks": masks}
+                                logger.debug(f"  IP-Adapter regional masking applied for {len(imgs)} characters.")
+                            else:
+                                kwargs["ip_adapter_image"] = imgs[0]
+                            
                             self.pipeline.set_ip_adapter_scale(self.ip_adapter_scale)
-                            logger.debug(f"  IP-Adapter ip_adapter_image applied: {os.path.basename(valid_refs[0])}")
+                            if len(imgs) == 1:
+                                logger.debug(f"  IP-Adapter ip_adapter_image applied: {os.path.basename(valid_refs[0])}")
                         except Exception as e:
                             logger.warning(f"  IP-Adapter injection failed: {e}")
         
