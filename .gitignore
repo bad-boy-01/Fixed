@@ -1,18 +1,17 @@
-# Ignore all pipeline output directories
-projects/*/output/
-projects/*/artifacts/
-projects/*/memory/
-projects/*/cache/
-projects/*/storyboard/
-projects/*/export/
+# Ignore all projects except novel/input/chapter1.txt
+projects/*
+!projects/novel/
+projects/novel/*
+!projects/novel/input/
+projects/novel/input/*
+!projects/novel/input/chapter1.txt
+
+# Exclude run result
+run result/
 
 # Ignore memory databases and checkpoint data
 *.db
 *.sqlite
-projects/*/checkpoints.json
-
-# Ignore local scripts (except placeholders/readmes if necessary)
-projects/*/input/*.txt
 
 # Python & Environment
 __pycache__/

@@ -36,12 +36,12 @@ pip install --quiet xformers || echo "  xformers not available on this GPU — c
 echo "  Python packages installed ✓"
 
 # 4. Verify Groq key (optional but recommended)
-echo "[4/5] Checking Groq API key..."
-if [ -n "$GROQ_API_KEY" ]; then
-    echo "  GROQ_API_KEY found in environment ✓"
+echo "[4/5] Checking OpenRouter API key..."
+if [ -n "$OPENROUTER_API_KEY" ]; then
+    echo "  OPENROUTER_API_KEY found in environment ✓"
 else
-    echo "  GROQ_API_KEY not set — will use Ollama as LLM"
-    echo "  TIP: Add GROQ_API_KEY to Kaggle Secrets for better LLM quality (free at console.groq.com)"
+    echo "  OPENROUTER_API_KEY not set — will use Ollama as LLM"
+    echo "  TIP: Add OPENROUTER_API_KEY to Kaggle Secrets"
 fi
 
 # 5. Verify GPU

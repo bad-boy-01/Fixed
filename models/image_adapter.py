@@ -115,8 +115,10 @@ class LocalImageAdapter:
             except Exception:
                 pass
 
-            # Critical: CPU offload keeps 16GB VRAM safe
-            self.pipeline.enable_model_cpu_offload()
+            # Critical: CPU offload removed to avoid multi-GPU Kaggle errors (RuntimeError: Expected all tensors to be on the same device)
+            # We strictly lock the pipeline to cuda:0
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            self.pipeline.to(device)
             logger.info(f"Pipeline ready: {self.model_name} | "
                         f"{self.width}×{self.height} | {self.steps} steps")
 
@@ -162,7 +164,7 @@ class LocalImageAdapter:
             # we can't find the 'pulid' module, but we'll try the real one first.
             try:
                 from pulid.pipeline_helper import PuLIDPipelineHelper
-                self.pulid_helper = PuLIDPipelineHelper(self.pipeline, device="cuda" if torch.cuda.is_available() else "cpu")
+                self.pulid_helper = PuLIDPipelineHelper(self.pipeline, device="cuda:0" if torch.cuda.is_available() else "cpu")
                 self.pulid_helper.load_pulid_weights(pulid_path)
                 self._pulid_loaded = True
                 logger.info(f"PuLID identity adapter loaded ✓ (scale={self.pulid_scale})")
@@ -199,8 +201,8 @@ class LocalImageAdapter:
                     weight_name=weight_name,
                 )
                 self.pipeline.set_ip_adapter_scale(self.ip_adapter_scale)
-                # Re-enable CPU offload so the new IP-Adapter encoder is handled correctly
-                self.pipeline.enable_model_cpu_offload()
+                device = "cuda:0" if torch.cuda.is_available() else "cpu"
+                self.pipeline.to(device)
                 self._ip_adapter_loaded = True
                 logger.info(
                     f"IP-Adapter loaded ✓ ({weight_name}, scale={self.ip_adapter_scale}) "
@@ -226,7 +228,7 @@ class LocalImageAdapter:
         try:
             from compel import Compel, ReturnedEmbeddingsType
             import torch
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            device = "cuda:0" if torch.cuda.is_available() else "cpu"
             
             # SDXL configuration for Compel
             self._compel = Compel(
@@ -438,7 +440,7 @@ class LocalImageAdapter:
                     
             except Exception as e:
                 logger.exception(f"  Compel encoding failed ({e}) — using plain prompt")
-                logger.error(f"  Debug Info - Prompt Length: {prompt_token_length}, Expected Device: {'cuda' if torch.cuda.is_available() else 'cpu'}")
+                logger.error(f"  Debug Info - Prompt Length: {prompt_token_length}, Expected Device: {'cuda:0' if torch.cuda.is_available() else 'cpu'}")
                 kwargs = None
 
         if kwargs is None:
@@ -508,23 +510,20 @@ class LocalImageAdapter:
                             # The correct parameter is ip_adapter_image — diffusers handles the
                             # encoding internally when ip_adapter_image is a PIL Image.
                             kwargs["ip_adapter_image"] = ref_img
+                            self.pipeline.set_ip_adapter_scale(self.ip_adapter_scale)
                             logger.debug(f"  IP-Adapter ip_adapter_image applied: {os.path.basename(valid_refs[0])}")
                         except Exception as e:
                             logger.warning(f"  IP-Adapter injection failed: {e}")
+        
+        # IP-Adapter Chicken & Egg fix: disable IP-Adapter if no reference image is provided
+        if not ref_paths or not valid_refs:
+            if self._ip_adapter_loaded and self.use_ip_adapter:
+                self.pipeline.set_ip_adapter_scale(0.0)
+                logger.debug("  IP-Adapter disabled (scale=0.0) for this run since no reference image was provided.")
 
         try:
-            # If IP-Adapter is being used alongside Compel, the UNet receives
-            # both prompt_embeds and ip_adapter_image. Some versions of diffusers
-            # handle this fine; others produce shape mismatches. Safest approach:
-            # if ip_adapter_image is in kwargs, remove prompt_embeds and let the
-            # pipeline encode the prompt text itself (IP-Adapter still applies).
-            if "ip_adapter_image" in kwargs and "prompt_embeds" in kwargs:
-                logger.debug("  Dropping Compel embeddings in favour of plain prompt (IP-Adapter active)")
-                for emb_key in ["prompt_embeds", "pooled_prompt_embeds",
-                                 "negative_prompt_embeds", "negative_pooled_prompt_embeds"]:
-                    kwargs.pop(emb_key, None)
-                kwargs["prompt"] = prompt
-                kwargs["negative_prompt"] = negative_prompt or MASTER_NEGATIVE
+            # Removed the block dropping Compel embeddings. SDXL requires BOTH 
+            # prompt_embeds and pooled_prompt_embeds to avoid dimension crash.
 
             image = self.pipeline(**kwargs).images[0]
             image.save(output_path)

@@ -418,7 +418,104 @@ class DeepSeekLLMAdapter:
         pass
 
 
-# ── Smart Adapter: tries Groq first, falls back to DeepSeek ────────────────────
+# ── OpenRouter API Adapter ────────────────────────────────────────────────────
+class OpenRouterAdapter:
+    def __init__(self, model_name: str = "moonshotai/kimi-k2.7-code", api_key: str = None):
+        self.model_name = model_name
+        self.api_key = api_key or self._load_key()
+        self.is_cloud = True
+        self.client = None
+        if self.api_key:
+            try:
+                from openai import OpenAI
+                self.client = OpenAI(
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=self.api_key,
+                )
+            except ImportError:
+                logger.error("OpenAI package is not installed. Please pip install openai.")
+
+    def _load_key(self) -> str:
+        key = os.environ.get("OPENROUTER_API_KEY", "")
+        if not key:
+            try:
+                from kaggle_secrets import UserSecretsClient  # type: ignore
+                key = UserSecretsClient().get_secret("OPENROUTER_API_KEY")
+            except Exception:
+                pass
+        return key
+
+    def check_health(self) -> bool:
+        return bool(self.api_key and self.client)
+
+    def generate(self, prompt: str, system_prompt: str = None,
+                 temperature: float = 0.7, model: str = None, max_tokens: int = 4096, **kwargs) -> str:
+        if not self.client:
+            return "ERROR: OPENROUTER_NO_API_KEY"
+            
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        
+        for attempt in range(6):
+            try:
+                completion = self.client.chat.completions.create(
+                    model=model or self.model_name,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                return completion.choices[0].message.content
+            except Exception as e:
+                err_str = str(e)
+                logger.warning(f"OpenRouter attempt {attempt+1} failed: {err_str}")
+                for marker in QUOTA_MARKERS:
+                    if marker in err_str:
+                        return '{"_quota_exhausted": true}'
+                time.sleep(2)
+        return "ERROR: OPENROUTER_FAILED"
+        
+    def generate_json(self, prompt: str, system_prompt: str = None,
+                      temperature: float = 0.1, model: str = None, max_tokens: int = 4096, **kwargs) -> str:
+        if not self.client:
+            return "ERROR: OPENROUTER_NO_API_KEY"
+            
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt + " You must output valid JSON."})
+        messages.append({"role": "user", "content": prompt})
+        
+        try:
+            completion = self.client.chat.completions.create(
+                model=model or self.model_name,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+            )
+            return self._repair(completion.choices[0].message.content)
+        except Exception as e:
+            logger.debug(f"OpenRouter JSON mode failed or unsupported: {e}")
+            # Fallback
+            content = self.generate(prompt, system_prompt, temperature, model, **kwargs)
+            return self._repair(content)
+
+    def _repair(self, content: str) -> str:
+        if "ERROR:" in content: return content
+        try:
+            repaired = repair_json(content)
+            if isinstance(repaired, (dict, list)):
+                return json.dumps(repaired)
+            return repaired
+        except Exception:
+            return content
+
+    def unload_model(self, *args, **kwargs):
+        pass
+
+
+# ── Smart Adapter: tries OpenRouter first, falls back to others ────────────────────
 class SmartLLMAdapter:
     """
     Intelligent router. Prioritizes a specific provider based on config.
@@ -444,6 +541,7 @@ class SmartLLMAdapter:
         self.fallback_count = 0
         self.total_calls = 0
 
+        self._openrouter = OpenRouterAdapter(model_name="moonshotai/kimi-k2.7-code")
         self._groq = GroqLLMAdapter(model_name=groq_model)
         self._deepseek = DeepSeekLLMAdapter(model_name=deepseek_model)
         self._gemini = GeminiLLMAdapter(model_name=gemini_model)
@@ -451,8 +549,11 @@ class SmartLLMAdapter:
 
         self._primary = None
         
-        # Route explicitly if provider matches
-        if self.provider == "gemini" and self._gemini.check_health():
+        # Route explicitly if provider matches or prioritize OpenRouter
+        if self._openrouter.check_health():
+            self._primary = self._openrouter
+            logger.info(f"LLM: Routed strictly to OpenRouter ({self._openrouter.model_name})")
+        elif self.provider == "gemini" and self._gemini.check_health():
             self._primary = self._gemini
             logger.info(f"LLM: Routed strictly to Gemini ({gemini_model})")
         elif self.provider == "ollama" and self._ollama.check_health():
@@ -525,7 +626,7 @@ class SmartLLMAdapter:
         if "ERROR:" in result and self.allow_fallback:
             logger.warning(f"Primary LLM failed ({result}). Trying fallback...")
             # If primary failed, try other available providers
-            for fallback in [self._groq, self._gemini, self._deepseek, self._ollama]:
+            for fallback in [self._openrouter, self._groq, self._gemini, self._deepseek, self._ollama]:
                 if fallback and fallback != self._primary and fallback.check_health():
                     logger.info(f"LLM Fallback: Trying {fallback.__class__.__name__}")
                     result = fallback.generate(
@@ -564,7 +665,7 @@ class SmartLLMAdapter:
         if "ERROR:" in result and self.allow_fallback:
             logger.warning(f"Primary LLM JSON failed ({result}). Trying fallback...")
             # If primary failed, try other available providers
-            for fallback in [self._groq, self._gemini, self._deepseek, self._ollama]:
+            for fallback in [self._openrouter, self._groq, self._gemini, self._deepseek, self._ollama]:
                 if fallback and fallback != self._primary and fallback.check_health():
                     logger.info(f"LLM JSON Fallback: Trying {fallback.__class__.__name__}")
                     result = fallback.generate_json(
