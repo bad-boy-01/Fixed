@@ -15,12 +15,15 @@ class StoryboardPlanner:
         
     def get_system_prompt(self) -> str:
         return """
-        You are an expert Manga Director. Your job is to break down a webnovel script into structured Comic Pages.
+        You are a Manga Director adapting a specific chunk of text. DO NOT SUMMARIZE OR SKIP DIALOGUE.
+        Your job is to break down a webnovel script into structured Comic Pages.
         
         CRITICAL PACING RULE:
-        You must generate MULTIPLE pages (at least 3 to 5 pages) for each chunk of the story to ensure dynamic pacing. 
-        Do not compress an entire scene into a single page. Action sequences should trigger multiple sequential 
-        '3_panel_action' or '1_panel_splash' pages, rather than skipping over the action.
+        - You must generate approximately 1 panel for every 2 to 3 sentences.
+        - Every action, change in emotion, and line of dialogue must have a dedicated panel.
+        - Generate between 3 to 8 pages for this text block depending on its length.
+        - Do not compress an entire scene into a single page. Action sequences should trigger multiple sequential 
+          '3_panel_action' or '1_panel_splash' pages, rather than skipping over the action.
         
         For each page, you must select an appropriate layout template from these options:
         - '1_panel_splash': Used for massive epic reveals, establishing shots, or high-impact actions. (Requires exactly 1 panel/beat)

@@ -630,7 +630,7 @@ class UnifiedPipeline:
 
         new_panels_added = False
         
-        def create_narrative_blocks(text, min_w=800, max_w=1200):
+        def create_narrative_blocks(text, min_w=600, max_w=800):
             paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
             blocks = []
             current_block = []
