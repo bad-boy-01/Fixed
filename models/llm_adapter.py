@@ -420,7 +420,7 @@ class DeepSeekLLMAdapter:
 
 # ── OpenRouter API Adapter ────────────────────────────────────────────────────
 class OpenRouterAdapter:
-    def __init__(self, model_name: str = "moonshotai/kimi-k2.7-code", api_key: str = None):
+    def __init__(self, model_name: str = "openrouter/free", api_key: str = None):
         self.model_name = model_name
         self.api_key = api_key or self._load_key()
         self.is_cloud = True
@@ -449,7 +449,7 @@ class OpenRouterAdapter:
         return bool(self.api_key and self.client)
 
     def generate(self, prompt: str, system_prompt: str = None,
-                 temperature: float = 0.7, model: str = None, max_tokens: int = 4096, **kwargs) -> str:
+                 temperature: float = 0.7, model: str = None, max_tokens: int = 2048, **kwargs) -> str:
         if not self.client:
             return "ERROR: OPENROUTER_NO_API_KEY"
             
@@ -477,7 +477,7 @@ class OpenRouterAdapter:
         return "ERROR: OPENROUTER_FAILED"
         
     def generate_json(self, prompt: str, system_prompt: str = None,
-                      temperature: float = 0.1, model: str = None, max_tokens: int = 4096, **kwargs) -> str:
+                      temperature: float = 0.1, model: str = None, max_tokens: int = 2048, **kwargs) -> str:
         if not self.client:
             return "ERROR: OPENROUTER_NO_API_KEY"
             
@@ -541,7 +541,7 @@ class SmartLLMAdapter:
         self.fallback_count = 0
         self.total_calls = 0
 
-        self._openrouter = OpenRouterAdapter(model_name="moonshotai/kimi-k2.7-code")
+        self._openrouter = OpenRouterAdapter(model_name="openrouter/free")
         self._groq = GroqLLMAdapter(model_name=groq_model)
         self._deepseek = DeepSeekLLMAdapter(model_name=deepseek_model)
         self._gemini = GeminiLLMAdapter(model_name=gemini_model)
