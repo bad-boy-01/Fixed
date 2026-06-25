@@ -17,6 +17,7 @@ import gc
 import hashlib
 import logging
 import os
+import torch
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
@@ -378,7 +379,17 @@ class LocalImageAdapter:
 
     def _run_generation(self, prompt, output_path, negative_prompt,
                         ref_paths, seed, steps, cfg, w, h):
-        import torch
+        
+        # Quality Enforcer
+        quality_prefix = "masterpiece, best quality, very aesthetic, absurdres, highres, ultra-detailed, anime artwork, "
+        prompt = f"{quality_prefix}{prompt}"
+        
+        quality_negative = "lowres, (bad), text, error, missing, extra, fewer, cropped, jpeg artifacts, worst quality, bad quality, watermark, displeasing, unfinished, chromatic aberration, scan, scanlayions"
+        if negative_prompt:
+            negative_prompt = f"{quality_negative}, {negative_prompt}"
+        else:
+            negative_prompt = quality_negative
+
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             
